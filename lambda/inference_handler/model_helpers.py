@@ -1,0 +1,3 @@
+def infer_invoice_data(text):
+    # mock: return dict with vendor, amount, etc.
+    ...

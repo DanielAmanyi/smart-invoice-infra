@@ -1,0 +1,3 @@
+def extract_text_from_s3(bucket, key):
+    # download S3 object, run OCR, return extracted text
+    ...

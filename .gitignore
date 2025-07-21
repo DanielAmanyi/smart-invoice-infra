@@ -1,0 +1,23 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.zip
+
+# Virtual envs
+.venv/
+env/
+venv/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Package dir from zip_deploy.sh
+lambda/**/package/
