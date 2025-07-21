@@ -1,8 +1,8 @@
 # Smart Invoice AI Pipeline – Cloud-Native ML Infrastructure
 
-This project is a cloud-native template for document AI processing — specifically invoice uploads, OCR extraction, and structured inference — built entirely on serverless infrastructure using AWS and Terraform.
+This project is a cloud-native template for document AI processing, specifically invoice uploads, OCR extraction, and structured inference built entirely on serverless infrastructure using AWS and Terraform.
 
-It simulates an ML production pipeline where raw invoice files are uploaded, processed for text and metadata, and persisted into a NoSQL store — with the design optimized for scale, cost-efficiency, and modularity.
+It simulates an ML production pipeline where raw invoice files are uploaded, processed for text and metadata, and persisted into a NoSQL store with the design optimized for scale, cost-efficiency, and modularity.
 
 >  While inspired by real-world patterns, this project is fully independent and created for educational, research, and demonstration purposes.
 
