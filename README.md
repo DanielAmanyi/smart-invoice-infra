@@ -26,7 +26,7 @@ The system implements a complete ML production pipeline where raw invoice files 
 
 ## Infrastructure Stack (IaC)
 
-All resources are deployed via [Terraform](https://www.terraform.io/), organized into reusable modules:
+All resources are deployed via [[Terraform](https://www.terraform.io/](https://github.com/DanielAmanyi/smart-invoice-infra/tree/main/terraform)), organized into reusable modules:
 
 | Component         | Tech Used              | Description                                      |
 |------------------|------------------------|--------------------------------------------------|
