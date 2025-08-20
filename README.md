@@ -1,10 +1,10 @@
 # Smart Invoice AI Pipeline – Cloud-Native ML Infrastructure
 
-This project is a cloud-native template for document AI processing, specifically invoice uploads, OCR extraction, and structured inference built entirely on serverless infrastructure using AWS and Terraform.
+This project is a **production-ready** cloud-native template for document AI processing, featuring real invoice uploads, OCR extraction using **AWS Textract**, and intelligent field extraction using **Amazon Bedrock AI** - all built on serverless infrastructure using AWS and Terraform.
 
-It simulates an ML production pipeline where raw invoice files are uploaded, processed for text and metadata, and persisted into a NoSQL store with the design optimized for scale, cost-efficiency, and modularity.
+The system implements a complete ML production pipeline where raw invoice files are uploaded, processed with real AI/ML services, and structured data is persisted into a NoSQL store. The design is optimized for scale, cost-efficiency, and modularity with **pay-per-use pricing**.
 
->  While inspired by real-world patterns, this project is fully independent and created for educational, research, and demonstration purposes.
+>  This project demonstrates real-world AI/ML patterns using AWS serverless services, created for educational, research, and demonstration purposes.
 
 ---
 
@@ -16,8 +16,8 @@ It simulates an ML production pipeline where raw invoice files are uploaded, pro
 2. **Trigger Inference**  
    S3 triggers a second Lambda function when a new object is created.
 
-3. **OCR + ML Simulation**  
-   This Lambda performs basic OCR and simulates inference logic (e.g., vendor detection, amount parsing).
+3. **OCR + AI Inference**  
+   This Lambda uses **AWS Textract** for OCR extraction and **Amazon Bedrock (Claude)** for intelligent field extraction (vendor, amount, date, etc.).
 
 4. **Persistence**  
    Results are written into a DynamoDB table for storage and further downstream use.
@@ -68,12 +68,45 @@ smart-invoice-infra/
 
 ## AI/ML Context
 
-While this demo uses mocked ML logic, it mirrors typical cloud AI pipelines:
+This project implements **real AI/ML services** for production-grade document processing:
 
-- OCR + Metadata Extraction (Tesseract, Textract, or fine-tuned models)
-- Serverless batch inference
-- Scalable Lambda-based inference orchestration
-- Ideal for extensions like SageMaker, Bedrock, or HuggingFace endpoints
+### AWS Textract (OCR)
+- Document text detection and extraction
+- Form data extraction (key-value pairs)
+- Table detection and structured data extraction
+- Confidence scoring for quality assessment
+
+### Amazon Bedrock (AI Inference)
+- Claude 3 Haiku for intelligent field extraction
+- Vendor name identification
+- Amount and currency detection
+- Date parsing and normalization
+- Invoice number extraction
+
+### Hybrid Extraction Strategy
+- **Rule-based extraction**: Fast, reliable for common patterns
+- **AI enhancement**: Handles complex/unusual invoice formats
+- **Result validation**: Intelligent merging and confidence scoring
+
+### Cost Structure (Pay-per-use)
+- **Textract**: ~$0.0015 per page
+- **Bedrock**: ~$0.0005 per invoice
+- **Total processing cost**: ~$0.002 per invoice
+
+### Extracted Data Structure
+```json
+{
+  "vendor": "ACME Corporation Inc.",
+  "amount": 2170.00,
+  "date": "2024-03-15",
+  "invoice_number": "INV-2024-001",
+  "tax_amount": 170.00,
+  "currency": "USD",
+  "line_items": [...],
+  "confidence": "high",
+  "extraction_method": "hybrid_ai_rules"
+}
+```
 
 ---
 
@@ -90,7 +123,16 @@ terraform init
 
 # 3. Deploy everything
 terraform apply
+```
+
+**Prerequisites:**
+- AWS CLI configured with appropriate permissions
+- Access to AWS Textract and Amazon Bedrock services
+- Bedrock model access enabled (Claude 3 Haiku)
+
 You must set your AWS credentials beforehand using environment variables or ~/.aws/credentials.
+
+**Note**: This deployment creates real AWS resources with usage-based costs. See `DEPLOYMENT_GUIDE.md` for detailed instructions and cost estimates.
 
  Author
 

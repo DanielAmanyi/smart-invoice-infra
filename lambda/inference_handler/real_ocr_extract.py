@@ -5,15 +5,15 @@ from typing import Dict, List, Any
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
+
 textract = boto3.client('textract')
+s3 = boto3.client('s3')
 
 def extract_text_from_s3(bucket: str, key: str) -> Dict[str, Any]:
     """
     Extract text and structured data from invoice using AWS Textract
     """
     try:
-        logger.info(f"Starting Textract analysis for s3://{bucket}/{key}")
-        
         # Use Textract to analyze the document
         response = textract.analyze_document(
             Document={
@@ -30,24 +30,15 @@ def extract_text_from_s3(bucket: str, key: str) -> Dict[str, Any]:
             'raw_text': extract_raw_text(response),
             'key_value_pairs': extract_key_value_pairs(response),
             'tables': extract_tables(response),
-            'lines': extract_lines(response),
-            'confidence_scores': extract_confidence_scores(response)
+            'lines': extract_lines(response)
         }
         
-        logger.info(f"Successfully extracted {len(extracted_data['lines'])} lines from {key}")
+        logger.info(f"Successfully extracted text from {key}")
         return extracted_data
         
     except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'UnsupportedDocumentException':
-            logger.error(f"Unsupported document format: {key}")
-            raise ValueError(f"Unsupported document format: {key}")
-        elif error_code == 'InvalidS3ObjectException':
-            logger.error(f"Invalid S3 object: {key}")
-            raise ValueError(f"Invalid S3 object: {key}")
-        else:
-            logger.error(f"Textract error for {key}: {str(e)}")
-            raise
+        logger.error(f"Textract error for {key}: {str(e)}")
+        raise
     except Exception as e:
         logger.error(f"Unexpected error extracting text from {key}: {str(e)}")
         raise
@@ -83,29 +74,17 @@ def extract_key_value_pairs(textract_response: Dict) -> Dict[str, str]:
         value_block = find_value_block(key_block, value_map)
         key = get_text(key_block, block_map)
         val = get_text(value_block, block_map) if value_block else ""
-        if key and val:
-            kvs[key.strip()] = val.strip()
+        kvs[key] = val
     
     return kvs
 
 def extract_tables(textract_response: Dict) -> List[List[str]]:
     """Extract table data from Textract response"""
     tables = []
-    block_map = {block['Id']: block for block in textract_response['Blocks']}
     
     for block in textract_response['Blocks']:
         if block['BlockType'] == 'TABLE':
-            table = []
-            if 'Relationships' in block:
-                for relationship in block['Relationships']:
-                    if relationship['Type'] == 'CHILD':
-                        for child_id in relationship['Ids']:
-                            cell = block_map.get(child_id)
-                            if cell and cell['BlockType'] == 'CELL':
-                                # This is simplified - full implementation would handle row/column positions
-                                cell_text = get_text(cell, block_map)
-                                if cell_text:
-                                    table.append(cell_text)
+            table = extract_table_data(block, textract_response['Blocks'])
             if table:
                 tables.append(table)
     
@@ -118,35 +97,6 @@ def extract_lines(textract_response: Dict) -> List[str]:
         if block['BlockType'] == 'LINE':
             lines.append(block['Text'])
     return lines
-
-def extract_confidence_scores(textract_response: Dict) -> Dict[str, float]:
-    """Extract confidence scores for different block types"""
-    confidence_scores = {
-        'overall': 0.0,
-        'lines': [],
-        'key_value_pairs': []
-    }
-    
-    line_confidences = []
-    kv_confidences = []
-    
-    for block in textract_response['Blocks']:
-        confidence = block.get('Confidence', 0)
-        
-        if block['BlockType'] == 'LINE':
-            line_confidences.append(confidence)
-        elif block['BlockType'] == 'KEY_VALUE_SET':
-            kv_confidences.append(confidence)
-    
-    confidence_scores['lines'] = line_confidences
-    confidence_scores['key_value_pairs'] = kv_confidences
-    
-    # Calculate overall confidence
-    all_confidences = line_confidences + kv_confidences
-    if all_confidences:
-        confidence_scores['overall'] = sum(all_confidences) / len(all_confidences)
-    
-    return confidence_scores
 
 def find_value_block(key_block: Dict, value_map: Dict) -> Dict:
     """Find the value block associated with a key block"""
@@ -163,7 +113,13 @@ def get_text(result: Dict, blocks_map: Dict) -> str:
         for relationship in result.get('Relationships', []):
             if relationship['Type'] == 'CHILD':
                 for child_id in relationship['Ids']:
-                    word = blocks_map.get(child_id)
-                    if word and word['BlockType'] == 'WORD':
+                    word = blocks_map[child_id]
+                    if word['BlockType'] == 'WORD':
                         text += word['Text'] + ' '
     return text.strip()
+
+def extract_table_data(table_block: Dict, all_blocks: List[Dict]) -> List[List[str]]:
+    """Extract data from a table block"""
+    # Implementation for table extraction
+    # This is a simplified version - full implementation would handle cell relationships
+    return []
