@@ -1,0 +1,330 @@
+name: Smart Invoice Pipeline CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_VERSION: 1.5.0
+  PYTHON_VERSION: 3.11
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/requirements.txt
+          pip install -r lambda/inference_handler/requirements.txt
+          pip install -r lambda/upload_handler/requirements.txt
+      
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v --cov=lambda --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+      
+      - name: Run security scan with bandit
+        run: |
+          pip install bandit[toml]
+          bandit -r lambda/ -f json -o bandit-report.json || true
+      
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: bandit-report.json
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install black flake8 isort mypy
+      
+      - name: Run Black formatter check
+        run: black --check --diff lambda/ tests/
+      
+      - name: Run isort import sorting check
+        run: isort --check-only --diff lambda/ tests/
+      
+      - name: Run flake8 linting
+        run: flake8 lambda/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+      
+      - name: Run mypy type checking
+        run: mypy lambda/ --ignore-missing-imports
+
+  terraform-validate:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Terraform Format Check
+        run: |
+          cd terraform
+          terraform fmt -check -recursive
+      
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init -backend=false
+      
+      - name: Terraform Validate
+        run: |
+          cd terraform
+          terraform validate
+      
+      - name: Run tfsec security scan
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: terraform/
+          soft_fail: true
+
+  build:
+    name: Build Lambda Packages
+    runs-on: ubuntu-latest
+    needs: [test, lint, terraform-validate]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Build Lambda packages
+        run: |
+          chmod +x zip_deploy.sh
+          ./zip_deploy.sh
+      
+      - name: Upload Lambda artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: lambda-packages
+          path: |
+            lambda/*/lambda.zip
+          retention-days: 30
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Lambda artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: lambda-packages
+          path: lambda/
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+      
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -var-file=environments/staging/terraform.tfvars -out=tfplan
+      
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve tfplan
+      
+      - name: Run integration tests
+        run: |
+          # Add integration test commands here
+          echo "Running integration tests against staging environment"
+          # pytest tests/integration/ --env=staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Lambda artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: lambda-packages
+          path: lambda/
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+      
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -var-file=environments/prod/terraform.tfvars -out=tfplan
+      
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve tfplan
+      
+      - name: Run smoke tests
+        run: |
+          # Add smoke test commands here
+          echo "Running smoke tests against production environment"
+          # pytest tests/smoke/ --env=production
+      
+      - name: Notify deployment success
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🚀 Smart Invoice Pipeline deployed to production successfully!"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: success()
+      
+      - name: Notify deployment failure
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "❌ Smart Invoice Pipeline deployment to production failed!"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: failure()
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  cost-estimation:
+    name: Cost Estimation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init -backend=false
+      
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v2
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      
+      - name: Generate Infracost cost estimate
+        run: |
+          cd terraform
+          infracost breakdown --path . --format json --out-file /tmp/infracost.json
+      
+      - name: Post Infracost comment
+        run: |
+          infracost comment github --path /tmp/infracost.json \
+            --repo $GITHUB_REPOSITORY \
+            --github-token ${{ secrets.GITHUB_TOKEN }} \
+            --pull-request ${{ github.event.pull_request.number }} \
+            --behavior update

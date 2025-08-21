@@ -1,0 +1,497 @@
+openapi: 3.0.0
+info:
+  title: Smart Invoice AI Pipeline API
+  description: |
+    REST API for the Smart Invoice AI Pipeline - a cloud-native document processing system
+    that uses AWS Textract for OCR and Amazon Bedrock for intelligent field extraction.
+    
+    ## Features
+    - Real-time invoice processing with AI/ML
+    - Support for PDF, PNG, JPG, TIFF, and BMP formats
+    - Hybrid extraction strategy (rule-based + AI enhancement)
+    - Cost-optimized pay-per-use pricing
+    
+    ## Processing Flow
+    1. Upload invoice via POST /upload
+    2. System processes with Textract (OCR) + Bedrock (AI)
+    3. Structured data stored in DynamoDB
+    4. Results available via GET /invoices/{id}
+  version: 1.0.0
+  contact:
+    name: Daniel Amanyi
+    url: https://linkedin.com/in/amanyid
+    email: daniel@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.smart-invoice.example.com/dev
+    description: Development environment
+  - url: https://api.smart-invoice.example.com/staging
+    description: Staging environment
+  - url: https://api.smart-invoice.example.com/prod
+    description: Production environment
+
+paths:
+  /upload:
+    post:
+      summary: Upload invoice for processing
+      description: |
+        Upload an invoice document for AI-powered processing. The system will:
+        1. Validate the file format and size
+        2. Extract text using AWS Textract
+        3. Apply intelligent field extraction using Amazon Bedrock
+        4. Store results in DynamoDB
+        
+        **Supported formats**: PDF, PNG, JPG, JPEG, TIFF, BMP
+        **Maximum file size**: 10MB
+        **Processing time**: 5-30 seconds depending on document complexity
+      operationId: uploadInvoice
+      tags:
+        - Invoice Processing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+            examples:
+              pdf_upload:
+                summary: PDF Invoice Upload
+                value:
+                  filename: "invoice-2024-001.pdf"
+                  file_base64: "JVBERi0xLjQKJcOkw7zDtsO..."
+              image_upload:
+                summary: Image Invoice Upload
+                value:
+                  filename: "receipt.jpg"
+                  file_base64: "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+      responses:
+        '200':
+          description: Invoice uploaded and processing initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+              examples:
+                success:
+                  summary: Successful upload
+                  value:
+                    message: "Invoice uploaded successfully"
+                    invoice_id: "123e4567-e89b-12d3-a456-426614174000"
+                    s3_key: "invoices/2024/01/15/invoice-2024-001.pdf"
+                    status: "processing"
+                    estimated_completion: "2024-01-15T10:30:45Z"
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_format:
+                  summary: Unsupported file format
+                  value:
+                    error:
+                      code: "UNSUPPORTED_FORMAT"
+                      message: "File format not supported. Please use PDF, PNG, JPG, TIFF, or BMP."
+                      retryable: false
+                file_too_large:
+                  summary: File size exceeded
+                  value:
+                    error:
+                      code: "FILE_TOO_LARGE"
+                      message: "File size exceeds 10MB limit"
+                      retryable: false
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /invoices/{invoice_id}:
+    get:
+      summary: Get invoice processing results
+      description: |
+        Retrieve the processing results for a specific invoice by its ID.
+        Returns extracted fields, confidence scores, and processing metadata.
+      operationId: getInvoice
+      tags:
+        - Invoice Retrieval
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: Unique identifier for the invoice
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Invoice data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceData'
+              examples:
+                processed_invoice:
+                  summary: Successfully processed invoice
+                  value:
+                    invoice_id: "123e4567-e89b-12d3-a456-426614174000"
+                    status: "completed"
+                    processed_at: "2024-01-15T10:30:45Z"
+                    vendor: "ACME Corporation Inc."
+                    amount: 2170.00
+                    currency: "USD"
+                    date: "2024-01-15"
+                    invoice_number: "INV-2024-001"
+                    tax_amount: 170.00
+                    line_items:
+                      - description: "Professional Services"
+                        amount: 2000.00
+                      - description: "Tax"
+                        amount: 170.00
+                    confidence: "high"
+                    extraction_method: "hybrid_ai_rules"
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /invoices:
+    get:
+      summary: List processed invoices
+      description: |
+        Retrieve a paginated list of processed invoices with optional filtering.
+      operationId: listInvoices
+      tags:
+        - Invoice Retrieval
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of invoices to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: start_key
+          in: query
+          description: Pagination token for next page
+          schema:
+            type: string
+        - name: vendor
+          in: query
+          description: Filter by vendor name
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          description: Filter invoices from this date (ISO 8601)
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          description: Filter invoices to this date (ISO 8601)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of invoices retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceList'
+
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Check the health status of the API and dependent services
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                timestamp: "2024-01-15T10:30:45Z"
+                services:
+                  textract: "available"
+                  bedrock: "available"
+                  dynamodb: "available"
+                  s3: "available"
+        '503':
+          description: System is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  schemas:
+    UploadRequest:
+      type: object
+      required:
+        - filename
+        - file_base64
+      properties:
+        filename:
+          type: string
+          description: Original filename with extension
+          example: "invoice-2024-001.pdf"
+          pattern: '^[^/\\:*?"<>|]+\.(pdf|png|jpg|jpeg|tiff|bmp)$'
+        file_base64:
+          type: string
+          description: Base64 encoded file content
+          format: byte
+          example: "JVBERi0xLjQKJcOkw7zDtsO..."
+        metadata:
+          type: object
+          description: Optional metadata about the invoice
+          properties:
+            source:
+              type: string
+              description: Source system or application
+              example: "accounting_system"
+            priority:
+              type: string
+              enum: [low, normal, high]
+              default: normal
+            tags:
+              type: array
+              items:
+                type: string
+              example: ["expense", "q1-2024"]
+
+    UploadResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Invoice uploaded successfully"
+        invoice_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        s3_key:
+          type: string
+          example: "invoices/2024/01/15/invoice-2024-001.pdf"
+        status:
+          type: string
+          enum: [processing, queued]
+          example: "processing"
+        estimated_completion:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:45Z"
+
+    InvoiceData:
+      type: object
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        status:
+          type: string
+          enum: [processing, completed, failed]
+          example: "completed"
+        processed_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:45Z"
+        s3_key:
+          type: string
+          example: "invoices/2024/01/15/invoice-2024-001.pdf"
+        s3_bucket:
+          type: string
+          example: "smart-invoice-prod-invoices"
+        file_type:
+          type: string
+          example: "pdf"
+        vendor:
+          type: string
+          example: "ACME Corporation Inc."
+        amount:
+          type: number
+          format: float
+          example: 2170.00
+        currency:
+          type: string
+          example: "USD"
+        date:
+          type: string
+          format: date
+          example: "2024-01-15"
+        invoice_number:
+          type: string
+          example: "INV-2024-001"
+        tax_amount:
+          type: number
+          format: float
+          example: 170.00
+        line_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineItem'
+        confidence:
+          type: string
+          enum: [low, medium, high]
+          example: "high"
+        extraction_method:
+          type: string
+          enum: [rules_only, ai_only, hybrid_ai_rules]
+          example: "hybrid_ai_rules"
+        textract_confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 95.5
+        text_length:
+          type: integer
+          example: 1250
+        raw_text_preview:
+          type: string
+          description: First 500 characters of extracted text
+          example: "ACME Corporation Inc.\nInvoice #INV-2024-001\nDate: 2024-01-15..."
+
+    LineItem:
+      type: object
+      properties:
+        description:
+          type: string
+          example: "Professional Services"
+        amount:
+          type: number
+          format: float
+          example: 2000.00
+        quantity:
+          type: number
+          format: float
+          example: 1.0
+        unit_price:
+          type: number
+          format: float
+          example: 2000.00
+
+    InvoiceList:
+      type: object
+      properties:
+        invoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceData'
+        pagination:
+          type: object
+          properties:
+            limit:
+              type: integer
+              example: 20
+            count:
+              type: integer
+              example: 15
+            next_key:
+              type: string
+              example: "eyJpbnZvaWNlX2lkIjoiMTIzZTQ1NjcifQ=="
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Invalid input provided"
+            retryable:
+              type: boolean
+              example: false
+            request_id:
+              type: string
+              example: "req_123456789"
+            details:
+              type: object
+              description: Additional error details
+              example:
+                field: "filename"
+                reason: "Invalid file extension"
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:45Z"
+        services:
+          type: object
+          properties:
+            textract:
+              type: string
+              enum: [available, degraded, unavailable]
+              example: "available"
+            bedrock:
+              type: string
+              enum: [available, degraded, unavailable]
+              example: "available"
+            dynamodb:
+              type: string
+              enum: [available, degraded, unavailable]
+              example: "available"
+            s3:
+              type: string
+              enum: [available, degraded, unavailable]
+              example: "available"
+        version:
+          type: string
+          example: "1.0.0"
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Invoice Processing
+    description: Operations for uploading and processing invoices
+  - name: Invoice Retrieval
+    description: Operations for retrieving processed invoice data
+  - name: System
+    description: System health and status operations
