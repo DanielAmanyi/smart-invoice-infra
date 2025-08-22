@@ -1,23 +1,93 @@
-# Byte-compiled / cache
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+terraform.tfplan.json
+
+# Python
 __pycache__/
 *.py[cod]
-*.zip
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Virtual envs
-.venv/
+# Virtual environments
+.env
+.venv
 env/
 venv/
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
-*.tfvars
+ENV/
+env.bak/
+venv.bak/
 
 # IDE
 .vscode/
 .idea/
-.DS_Store
+*.swp
+*.swo
+*~
 
-# Package dir from zip_deploy.sh
-lambda/**/package/
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# AWS
+.aws/
+*.pem
+*.key
+
+# Lambda packages
+*.zip
+lambda_packages/
+
+# Logs
+*.log
+logs/
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Security
+secrets.json
+.secrets
+*.secret
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
